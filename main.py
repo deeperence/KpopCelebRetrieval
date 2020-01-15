@@ -22,9 +22,6 @@ from tqdm import tqdm
 from utils import util
 from sklearn.metrics import f1_score
 from torch.autograd import Variable
-import torch.nn.functional as F
-
-from augmentation.mixup import mixup_criterion, mixup_data
 from dataloader import custom_transforms_type1, custom_transforms_type2, TrainDataset
 from backbone_networks import initialize_model
 
@@ -173,30 +170,17 @@ class Trainer(object):
 
         return model, evaluator, lr_scheduler, optimizer
 
-    def train_one_epoch(self, model, criterion, train_loader, optimizer, mixup_loss, accumulation_step=2):
+    def train_one_epoch(self, model, criterion, train_loader, optimizer):
         model.train()
         optimizer.zero_grad()
         train_loss = 0.
         for step, (inputs, targets) in tqdm(iterable=enumerate(train_loader), desc='Training Step: ', total=len(train_loader), leave=False):
             inputs, targets = inputs.to(self.device), targets.to(self.device)
-            if mixup_loss:
-                # alpha in [0.4, 1.0] 선택 가능
-                inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, alpha=1.0, use_cuda=self.args.use_cuda)
-                inputs, targets_a, targets_b = map(Variable, (inputs, targets_a, targets_b))
-                outputs = model(inputs)
-                loss = mixup_criterion(criterion, outputs.cuda(), targets_a.cuda(), targets_b.cuda(), lam)
-            else:
-                outputs = model(inputs)
-                loss = criterion(outputs, targets)
+            outputs = model(inputs)
+            loss = criterion(outputs, targets)
             loss.backward()
-
-            if accumulation_step:
-                if (step + 1) % accumulation_step == 0:
-                    optimizer.step()
-                    optimizer.zero_grad()
-            else:
-                optimizer.step()
-                optimizer.zero_grad()
+            optimizer.step()
+            optimizer.zero_grad()
             train_loss += loss.item() / len(train_loader)
             epoch_lr = util.get_lr(optimizer)
             self.writer.add_scalar('train/batch_loss', loss, step)
@@ -221,8 +205,7 @@ class Trainer(object):
 
         return val_loss, val_score
 
-    def train_model(self, args, model, optimizer, scheduler, criterion, train_loader, validation_dataset, validation_loader,
-                    df_validation, weight_file_name='weight_best.pt', accumulation_step=4, mixup_loss=False):
+    def train_model(self, args, model, optimizer, scheduler, criterion, train_loader, validation_dataset, validation_loader, weight_file_name='weight_best.pt'):
         model.train() # Train모드로 전환
         self.args = args
 
@@ -236,7 +219,7 @@ class Trainer(object):
         for epoch in tqdm(range(args.epochs)):
             start_time = time.time()
             now = datetime.now()
-            train_loss = self.train_one_epoch(model, criterion, train_loader, optimizer, mixup_loss, accumulation_step)
+            train_loss = self.train_one_epoch(model, criterion, train_loader, optimizer)
             val_loss, val_score = self.validation(args, model, criterion, validation_dataset, validation_loader)
             score.append(val_score)
             self.writer.add_scalar('train/epoch_loss', train_loss, epoch)
@@ -286,13 +269,8 @@ class Trainer(object):
 def main(writer):
     # Set base parameters (dataset path, backbone name etc...)
     parser = argparse.ArgumentParser(description="This code is for testing various models.")
-
-    # Available models on local device(DreamMachine3)
-    # resnext50_32x4d, resnext101_32x8d, senet154, se_resnet101(num_class 수정 요), se_resnet152(num_class 수정 요), se_resnext50_32x4d(num_class 이슈 존재), se_resnext101_32x4d(num_class 이슈 존재)
-    # efficientnetb0 ~ b4 사용 가능
-
     parser.add_argument('--backbone', type=str, default='efficientnet-b0',
-                        choices=['efficientnet-b0','efficientnet-b1', 'efficientnet-b2', 'efficientnet-b3', 'efficientnet-b4'], # EfficientNet models pretrained with ImageNet-1000
+                        choices=['efficientnet-b0','efficientnet-b1', 'efficientnet-b2', 'efficientnet-b3', 'efficientnet-b4'],
                         help='Set backbone name. be careful input_channels when using oct_resnet.')
     parser.add_argument('--dataset', type=str, default='KaKR3rd', choices=['KPopGirls', 'KPopBoys'],
                         help='Set dataset type.')

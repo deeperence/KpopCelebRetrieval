@@ -8,6 +8,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+.car_train_test
 build/
 develop-eggs/
 dist/
@@ -102,13 +103,18 @@ celerybeat.pid
 *.sage.py
 
 # Environments
+.idea/
 .env
 .venv
 env/
 venv/
 ENV/
+runs/
 env.bak/
 venv.bak/
+.xml
+.iml
+*.pt
 
 # Spyder project settings
 .spyderproject
@@ -127,3 +133,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# tensorflow .pb
+*.pb

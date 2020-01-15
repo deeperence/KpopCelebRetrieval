@@ -1,1 +1,12 @@
 # KpopCelebRetrieval
+Deeperence 멱살스터디 세 번째 시간입니다! 이번 시간에는 지난 스터디에 이은 심화 버전으로 연예인 이미지 검색기를 준비했습니다. 이미지 검색은 softmax 레이어를 거쳐 확률을 뽑아 내는 분류 문제와는 달리 FC 레이어를 활용해 두 이미지 간 유사도를 측정합니다. 
+
+<blockquote>
+<b>Deeperence 멱살 스터디는...</b><br>
+숭실대학교 머신러닝 소모임 Deeperence에서 진행하는 'Vision AI 멱살 스터디'는 처음 비전 인공지능에 입문하신 분들을 대상으로 한달간 다양한 태스크(Classification, Detection, Segmentation etc...)를 속성으로 경험시켜 드리는 스터디입니다. 이름 그대로 멱살을 잡아끄는 듯한 초밀착 멘토링으로 가려운 곳을 시원하게 긁어 드립니다. (이 튜토리얼은 Deeperence, 강남 캐글스터디 초급to고급, 제 <a href = "https://brstar96.github.io/">개인 블로그</a>에 연재됩니다.)<br><br>
+<i>Written by Myeong-Gyu.LEE, 2020-01-02</i>
+</blockquote>
+</blockquote>
+
+## Dependencies
+- pytorch 1.3

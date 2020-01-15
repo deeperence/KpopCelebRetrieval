@@ -75,4 +75,3 @@ def remove_legacyModels(path):
     print('Current best models: ', [filename for filename in best_models if filename.endswith(filename.split('.')[-1])])
     for file in del_model_list:
         os.remove(os.path.join(path, file))
-

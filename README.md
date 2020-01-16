@@ -12,13 +12,13 @@ Deeperence 멱살스터디 세 번째 시간입니다! 이번 시간에는 지�
 </blockquote>
 </blockquote>
 <br>
-이 코드는 다음과 같은 순서로 연예인 유사 이미지 검색을 수행합니다. <br>
 
+이 코드는 다음과 같은 순서로 연예인 유사 이미지 검색을 수행합니다. <br>
 1. Train set으로 softmax가 없는 분류기를 학습합니다.
 2. KNN(K-nearest neighbor) 알고리즘으로 Retrieval을 수행합니다. 우선, 학습된 모델에 Reference image들을 통과시켜 얻은 feature vector들로 KNN 알고리즘을 실행합니다.
 
 ```python
-from sklearn.neighbors import NearestNeighbors <br>
+from sklearn.neighbors import NearestNeighbors
 knn = NearestNeighbors(n_neighbors=10)
 knn.fit(logit_list)
 ```

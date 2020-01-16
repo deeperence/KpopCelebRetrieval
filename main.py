@@ -314,7 +314,7 @@ class Trainer(object):
 def main(writer):
     # Set base parameters (dataset path, backbone name etc...)
     parser = argparse.ArgumentParser(description="This code is for testing various models.")
-    parser.add_argument('--backbone', type=str, default='efficientnet-b0',
+    parser.add_argument('--backbone', type=str, default='efficientnet-b2',
                         choices=['efficientnet-b0','efficientnet-b1', 'efficientnet-b2', 'efficientnet-b3', 'efficientnet-b4'],
                         help='Set backbone name. be careful input_channels when using oct_resnet.')
     parser.add_argument('--dataset', type=str, default='KaKR3rd', choices=['KPopGirls', 'KPopBoys'],

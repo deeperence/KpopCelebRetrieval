@@ -27,16 +27,15 @@ class Trainer(object):
         self.args = args
         self.writer = writer # object for saving current status
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        self.df_train = pd.read_csv(os.path.join(args.dataset_path, 'chexcar_train.csv'))
-        self.df_train['new_class'] = self.df_train['new_class'].astype('int')
-        self.df_train.replace(196, 0, inplace=True)
+        self.df_train = pd.read_csv(os.path.join(args.dataset_path, 'train.csv'))
+        self.df_reference = pd.read_csv(os.path.join(args.dataset_path, 'reference.csv'))
 
         if args.mode == 'train':
             print('Training Start...')
             print('Total epoches:', args.epochs)
             stratified_folds = StratifiedShuffleSplit(n_splits=1, test_size=0.1)
 
-            for (train_index, validation_index) in stratified_folds.split(self.df_train['img_file'], self.df_train['new_class']):
+            for (train_index, validation_index) in stratified_folds.split(self.df_train['class'], self.df_train['class']):
                 df_train = self.df_train.iloc[train_index, :].reset_index()
                 df_validation = self.df_train.iloc[validation_index, :].reset_index()
 
@@ -246,7 +245,7 @@ class Trainer(object):
                 valid_preds[i * self.args.batch_size: (i+1) * self.args.batch_size] = outputs.cpu().numpy()
                 val_loss += loss.item() / len(valid_loader)
             y_pred = np.argmax(valid_preds, axis=1)
-            val_score = f1_score(df_valid['new_class'].values, y_pred, average='micro')
+            val_score = f1_score(df_valid['class'].values, y_pred, average='micro')
 
         return val_loss, val_score
 
@@ -329,7 +328,7 @@ def main(writer):
 
     # Set hyper params for training network.
     parser.add_argument('--loss_type', type=str, default='ce', choices=['ce', 'focal'],
-                        help='Set loss func type. `ce` is crossentropy, `focal` is focal entropy from DeeplabV3.')
+                        help='Set loss func type. `ce` is crossentropy, `focal` is focal entropy from pytorch DeeplabV3 code.')
     parser.add_argument('--epochs', type=int, default=None, metavar='N',
                         help='Set max epoch. If None, max epoch will be set to current dataset`s max epochs.')
     parser.add_argument('--batch_size', type=int, default=None,
@@ -375,7 +374,7 @@ def main(writer):
         lrs = {'KPopGirls': 2.5e-4, 'KPopBoys': 2.5e-4} # AI-RUSH baseline : 2.5e-4
         args.lr = lrs[args.dataset]
     if args.class_num is None:
-        class_nums = {'KPopGirls': 29, 'KPopBoys': None}
+        class_nums = {'KPopGirls': 25, 'KPopBoys': None}
         args.class_num  = class_nums[args.dataset]
     if args.image_size is None:
         image_sizes = {'KPopGirls': 224, 'KPopBoys': 224}

@@ -64,9 +64,8 @@ class Trainer(object):
                 print('optimizer : ', type(optimizer), ' lr scheduler : ', type(lr_scheduler))
 
                 # Train the model
-                # train_model(self, args, model, optimizer, scheduler, criterion, train_loader, validation_dataset, validation_loader, weight_file_name='weight_best.pt'):
                 self.train_model(args=args, model = model, optimizer=optimizer, scheduler=lr_scheduler, criterion=criterion, train_loader=train_loader,
-                                 validation_dataset=validation_dataset, validation_loader=validation_loader, weight_file_name='weight_best.pt')
+                                 df_validation=df_validation, validation_dataset=validation_dataset, validation_loader=validation_loader, weight_file_name='weight_best.pth')
                 del(model, evaluator, lr_scheduler, optimizer)
                 gc.collect()
 
@@ -81,7 +80,7 @@ class Trainer(object):
             query_path = os.path.join(args.dataset_path, '/QueryImages')
             reference_path = os.path.join(args.dataset_path, '/Images')
             model_path = args.model_savepath
-            weight_file = [file for file in os.listdir(model_path) if file.endswith(".pt")] # 'model_savepath' 디렉토리 안의 .pt파일 조회
+            weight_file = [file for file in os.listdir(model_path) if file.endswith(".pth")] # 'model_savepath' 디렉토리 안의 .pth파일 조회
             db = [os.path.join(reference_path, path) for path in os.listdir(reference_path)] # 'reference_path' 디렉토리 안의 reference image 파일 이름을 db 리스트에 append합니다.
 
             queries = [v.split('/')[-1].split('.')[0] for v in os.listdir(query_path)] # 'query_path'의 각 파일들로부터 파일 이름만 남깁니다. (e.g. 'yooa1', 'yeji3', ...)
@@ -148,7 +147,7 @@ class Trainer(object):
         #'''
 
         # Note that below model doesn't have softmax layer.
-        model = initialize_model(args = args, model_name=args.backbone, feature_extract=args.feature_extract, use_pretrained=True, num_classes=args.class_num)
+        model = initialize_model(args = args, model_name=args.backbone, feature_extract=args.feature_extract, use_pretrained=args.use_pretrained, num_classes=args.class_num)
 
         # Print parameters to be optimized/updated.
         print("Params to learn:")
@@ -236,8 +235,10 @@ class Trainer(object):
 
         return train_loss
 
-    def validation(self, model, criterion, validation_dataset, valid_loader, df_valid):
+    def validation(self, model, criterion, validation_dataset, valid_loader, df_valid, epoch):
         model.eval()
+        y_true = df_valid['class'].values
+        self.writer.add_histogram('hist/epoch_y_true', y_true, epoch)
         valid_preds = np.zeros((len(validation_dataset), self.args.class_num))
         val_loss = 0.
 
@@ -249,11 +250,11 @@ class Trainer(object):
                 valid_preds[i * self.args.batch_size: (i+1) * self.args.batch_size] = outputs.cpu().numpy()
                 val_loss += loss.item() / len(valid_loader)
             y_pred = np.argmax(valid_preds, axis=1)
-            val_score = f1_score(df_valid['class'].values, y_pred, average='micro')
+            val_score = f1_score(y_true, y_pred, average='micro')
 
         return val_loss, val_score
 
-    def train_model(self, args, model, optimizer, scheduler, criterion, train_loader, validation_dataset, validation_loader, weight_file_name='weight_best.pt'):
+    def train_model(self, args, model, optimizer, scheduler, criterion, train_loader, df_validation, validation_dataset, validation_loader, weight_file_name='weight_best.pth'):
         model.train() # Train모드로 전환
         self.args = args
 
@@ -268,14 +269,14 @@ class Trainer(object):
             start_time = time.time()
             now = datetime.now()
             train_loss = self.train_one_epoch(model, criterion, train_loader, optimizer)
-            val_loss, val_score = self.validation(args, model, criterion, validation_dataset, validation_loader)
+            val_loss, val_score = self.validation(model=model, criterion=criterion, validation_dataset=validation_dataset, valid_loader=validation_loader, df_valid=df_validation, epoch=epoch)
             score.append(val_score)
             self.writer.add_scalar('train/epoch_loss', train_loss, epoch)
             self.writer.add_scalar('val/epoch_loss', val_loss, epoch)
             self.writer.add_scalar('val/epoch_F1score', val_score, epoch)
 
             # model save (score or loss?)
-            if args.cv_checkpoint:
+            if args.checkpoint_type:
                 if val_score > best_score:
                     best_score = val_score
                     train_result['best_epoch'] = epoch + 1
@@ -288,7 +289,6 @@ class Trainer(object):
                         args.checkname + 'epoch' + str(epoch) + '-' + str(round(val_score,4))+'-'+ weight_file_name)
                     print('\n')
                     print('Saved model name: ', args.checkname + '-epoch' + str(epoch) + '-' + str(round(val_score,4))+'-'+ str(('%s-%s-%s' % (now.hour, now.minute, now.second)) + weight_file_name))
-                    util.remove_legacyModels(args.model_savepath) # Delete useless checkpoints.
             else:
                 if val_loss < best_loss:
                     best_loss = val_loss
@@ -304,7 +304,7 @@ class Trainer(object):
             epoch_lr = util.get_lr(optimizer)
             print('\n')
 
-            print("Epoch {} - train_loss: {:.4f}  val_loss: {:.4f}  cv_score: {:.4f}  lr: {:.6f}  time: {:.0f}s".format(
+            print("Epoch {} - train_loss: {:.4f}  val_loss: {:.4f}  val_score: {:.4f}  lr: {:.6f}  time: {:.0f}s".format(
                     epoch + 1, train_loss, val_loss, val_score, epoch_lr, elapsed))
             self.writer.add_scalar('epoch/learning_rate', epoch_lr, epoch)
 
@@ -324,6 +324,7 @@ def main(writer):
                         help='Set dataset type.')
     parser.add_argument('--dataset_path', type=str, default='./../KPopGirls', help='Set base dataset path.')
     parser.add_argument('--workers', type=int, default=4, metavar='N', help='Set CPU threads for pytorch dataloader')
+    parser.add_argument('--checkpoint_type', type=bool, default='True', help='whether store best checkpoint from validation')
     parser.add_argument('--checkname', type=str, default=None,
                         help='Set the checkpoint name. if None, checkname will be set to current dataset+backbone+time.')
     parser.add_argument('--model_savepath', type=str, default=None, help='set directory for saving trained model.')
@@ -367,7 +368,6 @@ def main(writer):
 
     args = parser.parse_args()
     print('cuDNN version : ', torch.backends.cudnn.version())
-    print(os.listdir(args.dataset_path))
 
     # default settings for test models. (contains epochs, lr and class_num of dataset etc.)
     if args.epochs is None:

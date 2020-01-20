@@ -49,27 +49,15 @@ def pick_best_loss(result1, result2):
         return result2
 
 def remove_legacyModels(path):
-    fold_list = []
     entire_file_list = os.listdir(path)
-
-    # Get unique fold name
     for filename in entire_file_list:
-        foldname_pattern = re.compile('fold\d')
-        fold_list.append(foldname_pattern.findall(filename))
-    fold_list = sorted(list(set(sum(fold_list, []))))
+        # best score 갱신
+        if model in filename and float(filename.split('-')[-2]) > float(fold_best_model_score):
+            fold_best_model_score = filename.split('-')[-2]
+            fold_best_model_name = filename
+    best_models.append(fold_best_model_name)
+    print(fold + ' best model:', fold_best_model_name + ' / cv score:', fold_best_model_score)
 
-    # fold 단위로 best model score 계산
-    best_models = []
-    for fold in fold_list:
-        fold_best_model_score = 0.
-        fold_best_model_name = []
-        for filename in entire_file_list:
-            # fold best score 갱신
-            if fold in filename and float(filename.split('-')[-2]) > float(fold_best_model_score):
-                fold_best_model_score = filename.split('-')[-2]
-                fold_best_model_name = filename
-        best_models.append(fold_best_model_name)
-        print(fold + ' best model:', fold_best_model_name + ' / cv score:', fold_best_model_score)
     # best score model 제외한 나머지 모델 삭제
     del_model_list = list(set(entire_file_list) - set(best_models))
     print('Current best models: ', [filename for filename in best_models if filename.endswith(filename.split('.')[-1])])

@@ -115,6 +115,7 @@ venv.bak/
 .xml
 .iml
 *.pt
+*.pth
 
 # Spyder project settings
 .spyderproject

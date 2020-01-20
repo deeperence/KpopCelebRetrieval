@@ -62,6 +62,7 @@ class Trainer(object):
                 print('optimizer : ', type(optimizer), ' lr scheduler : ', type(lr_scheduler))
 
                 # Train the model
+                # train_model(self, args, model, optimizer, scheduler, criterion, train_loader, validation_dataset, validation_loader, weight_file_name='weight_best.pt'):
                 self.train_model(args=args, model = model, optimizer=optimizer, scheduler=lr_scheduler, criterion=criterion, train_loader=train_loader,
                                  validation_dataset=validation_dataset, validation_loader=validation_loader, weight_file_name='weight_best.pt')
                 del(model, evaluator, lr_scheduler, optimizer)

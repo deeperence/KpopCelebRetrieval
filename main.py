@@ -231,7 +231,7 @@ class Trainer(object):
             train_loss += loss.item() / len(train_loader)
             epoch_lr = util.get_lr(optimizer)
             self.writer.add_scalar('train/batch_loss', loss, step)
-            self.writer.add_scalar('batch/learning_rate', epoch_lr, step)
+            self.writer.add_scalar('learning_rate/batch', epoch_lr, step)
 
         return train_loss
 
@@ -306,7 +306,7 @@ class Trainer(object):
 
             print("Epoch {} - train_loss: {:.4f}  val_loss: {:.4f}  val_score: {:.4f}  lr: {:.6f}  time: {:.0f}s".format(
                     epoch + 1, train_loss, val_loss, val_score, epoch_lr, elapsed))
-            self.writer.add_scalar('epoch/learning_rate', epoch_lr, epoch)
+            self.writer.add_scalar('learning_rate/epoch', epoch_lr, epoch)
 
             # scheduler update
             if args.is_scheduler == True:

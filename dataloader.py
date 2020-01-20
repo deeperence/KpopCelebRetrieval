@@ -4,7 +4,7 @@ import torchvision as vision
 from augmentation.augmentationPolicies import CIFAR10Policy
 from backbones.efficientnet import EfficientNet
 
-def custom_transforms_type(model_name, target_size):
+def custom_transforms(model_name, target_size):
     image_size = EfficientNet.get_image_size(model_name)
     print(model_name + ' image size:',image_size)
     data_transforms = {
@@ -26,6 +26,7 @@ def custom_transforms_type(model_name, target_size):
                 [0.485, 0.456, 0.406],
                 [0.229, 0.224, 0.225])
         ]),
+        # 'test'는 reference와 query 이미지에 대해 수행됩니다.
         'test': vision.transforms.Compose([
             vision.transforms.Resize((target_size, target_size)),
             vision.transforms.ToTensor(),
@@ -46,8 +47,8 @@ class TrainDataset():
         return len(self.df)
 
     def __getitem__(self, idx):
-        image = Image.open(os.path.join(self.train_data_path, self.df['img_file'][idx])).convert("RGB")
-        label = self.df['new_class'][idx]
+        image = Image.open(os.path.join(self.train_data_path, self.df['filename'][idx])).convert("RGB")
+        label = self.df['class'][idx]
         if self.transforms:
             image = self.transforms(image)
 
@@ -63,7 +64,7 @@ class TestDataset():
         return len(self.df)
 
     def __getitem__(self, idx):
-        image = Image.open(os.path.join(self.test_data_path, self.df['img_file'][idx])).convert("RGB")
+        image = Image.open(os.path.join(self.test_data_path, self.df['filename'][idx])).convert("RGB")
         if self.transforms:
             image = self.transforms(image)
 

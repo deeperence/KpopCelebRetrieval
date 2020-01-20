@@ -19,7 +19,7 @@ from torch import optim
 from tqdm import tqdm
 from utils import util
 from sklearn.metrics import f1_score
-from dataloader import TestDataset, TrainDataset, custom_transforms_type
+from dataloader import TestDataset, TrainDataset, custom_transforms
 from backbone_networks import initialize_model
 
 class Trainer(object):
@@ -29,8 +29,10 @@ class Trainer(object):
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.df_train = pd.read_csv(os.path.join(args.dataset_path, 'train.csv'))
         self.df_reference = pd.read_csv(os.path.join(args.dataset_path, 'reference.csv'))
+        self.df_query = pd.read_csv(os.path.join(args.dataset_path, 'query.csv'))
 
         if args.mode == 'train':
+            # Train mode에서는 softmax 레이어를 제거한 상태로 일반적인 분류기를 학습합니다.
             print('Training Start...')
             print('Total epoches:', args.epochs)
             stratified_folds = StratifiedShuffleSplit(n_splits=1, test_size=0.1)
@@ -40,14 +42,14 @@ class Trainer(object):
                 df_validation = self.df_train.iloc[validation_index, :].reset_index()
 
                 # Load custom transforms
-                self.transform = custom_transforms_type(model_name=args.backbone, target_size=args.image_size)
+                self.transform = custom_transforms(model_name=args.backbone, target_size=args.image_size)
 
                 # Load dataset for train
-                train_dataset = TrainDataset(os.path.join(args.dataset_path, 'train_cropped'), df_train, transforms=self.transform['train'])
+                train_dataset = TrainDataset(os.path.join(args.dataset_path, 'Images'), df_train, transforms=self.transform['train'])
                 train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
 
                 # Load dataset for validation
-                validation_dataset = TrainDataset(os.path.join(args.dataset_path, 'train_cropped'), df_validation, transforms=self.transform['validation'])
+                validation_dataset = TrainDataset(os.path.join(args.dataset_path, 'Images'), df_validation, transforms=self.transform['validation'])
                 validation_loader = DataLoader(validation_dataset, batch_size=args.batch_size, shuffle=False)
 
                 print('Dataset class : ', self.args.class_num)
@@ -70,14 +72,14 @@ class Trainer(object):
 
         elif args.mode == 'test': # Test 모드로 설정 후 모델 infer 수행 및 score 계산
             '''
-            모델은 Query image를 인풋으로 받고 각 reference images와 유사도를 비교한 후 query image와 유사한 순서대로 reference image filename을 정렬해 보여줍니다. 
-            - Query image는 검색기에 테스트용으로 넣을 이미지입니다. 
+            trian 후, 모델은 Query image를 인풋으로 받고 각 reference images와 유사도를 비교한 후 query image와 유사한 순서대로 reference image filename을 정렬해 보여줍니다. 
             - Reference image는 query 이미지와 유사도 비교의 대상이 되는 이미지입니다.
+            - Query image는 모델에 넣어 이미지 검색을 수행할 이미지입니다. 
             '''
 
             print('Inferring Start...')
-            query_path = os.path.join(args.dataset_path, '/Image/Queries')
-            reference_path = os.path.join(args.dataset_path, '/Image/References')
+            query_path = os.path.join(args.dataset_path, '/QueryImages')
+            reference_path = os.path.join(args.dataset_path, '/Images')
             model_path = args.model_savepath
             weight_file = [file for file in os.listdir(model_path) if file.endswith(".pt")] # 'model_savepath' 디렉토리 안의 .pt파일 조회
             db = [os.path.join(reference_path, path) for path in os.listdir(reference_path)] # 'reference_path' 디렉토리 안의 reference image 파일 이름을 db 리스트에 append합니다.
@@ -87,51 +89,52 @@ class Trainer(object):
             queries.sort()
             db.sort()
 
-            transform = custom_transforms_type(model_name = args.backbone, target_size=args.image_sizes)
-            query_dataset = TestDataset(query_path, df_test, transforms=transform['test'])
-            query_loader = DataLoader(query_dataset, batch_size=1, shuffle=False)
-            ref_dataset = TestDataset(reference_path, df_test, transforms=transform['test'])
-            ref_loader = DataLoader(ref_dataset, batch_size=args., shuffle=False)
+            transform = custom_transforms(model_name = args.backbone, target_size=args.image_sizes)
+            ref_dataset = TestDataset(reference_path, self.df_reference, transforms=transform['test'])
+            ref_loader = DataLoader(ref_dataset, batch_size=args.test_batch_nums, shuffle=False)
+            query_dataset = TestDataset(query_path, self.df_query, transforms=transform['test'])
+            query_loader = DataLoader(query_dataset, batch_size=args.test_batch_nums, shuffle=False)
 
             model = initialize_model(args=None, model_name=args.backbone, num_classes=args.class_num)
             model.load_state_dict(torch.load(weight_file), strict=False)
             print('model loaded:', weight_file)
             model.eval()
-            model.to('cuda')
+            model.to(device)
+
+            query_vecs = []
+            reference_vecs=[]
 
             # Query image에 대한 feature vector를 학습이 다 된 모델로부터 추출합니다.
             for query_i, query_images in enumerate(query_loader):
                 query_images = query_images.cuda()
-                query_vecs = np.asarray(model(query_images).detach())
+                query_vecs.append(np.asarray(model(query_images).detach()))
 
             # Reference image에 대한 feature vector를 학습이 다 된 모델로부터 추출합니다.
             for ref_i, ref_images in enumerate(ref_loader):
                 ref_images = ref_images.cuda()
-                reference_vecs =  np.asarray(model(ref_images).detach())
-
-
+                reference_vecs.append(np.asarray(model(ref_images).detach()))
 
             # l2 normalization
             query_vecs = util.l2_normalize(query_vecs)
             reference_vecs = util.l2_normalize(reference_vecs)
 
-            # Calculate cosine similarity
+            # Calculate cosine similarity and sort
             sim_matrix = np.dot(query_vecs, reference_vecs.T)
             indices = np.argsort(sim_matrix, axis=1)
             indices = np.flip(indices, axis=1)
 
             retrieval_results = {}
 
-            for (i, query) in enumerate(queries):
-                ranked_list = [references[k] for k in indices[i]]
+            for (i, query) in enumerate(query_dataset):
+                query = query.split('/')[-1].split('.')[0]
+                ranked_list = [ref_dataset[k].split('/')[-1].split('.')[0] for k in indices[i]]
                 ranked_list = ranked_list[:1000]
-
                 retrieval_results[query] = ranked_list
+
+            result_dict = list(zip(range(len(retrieval_results)), retrieval_results.items()))
+
             print('Retrieval done.')
-
-            final_retrieval_list = list(zip(range(len(retrieval_results)), retrieval_results.items()))
-            print(final_retrieval_list)
-
+            print(result_dict)
         else:
             print("wrong mode input.")
             raise NotImplementedError
@@ -317,7 +320,7 @@ def main(writer):
     parser.add_argument('--backbone', type=str, default='efficientnet-b2',
                         choices=['efficientnet-b0','efficientnet-b1', 'efficientnet-b2', 'efficientnet-b3', 'efficientnet-b4'],
                         help='Set backbone name. be careful input_channels when using oct_resnet.')
-    parser.add_argument('--dataset', type=str, default='KaKR3rd', choices=['KPopGirls', 'KPopBoys'],
+    parser.add_argument('--dataset', type=str, default='KPopGirls', choices=['KPopGirls', 'KPopBoys'],
                         help='Set dataset type.')
     parser.add_argument('--dataset_path', type=str, default='./../KPopGirls', help='Set base dataset path.')
     parser.add_argument('--workers', type=int, default=4, metavar='N', help='Set CPU threads for pytorch dataloader')
@@ -334,9 +337,9 @@ def main(writer):
                         help='Set max epoch. If None, max epoch will be set to current dataset`s max epochs.')
     parser.add_argument('--batch_size', type=int, default=None,
                         metavar='N', help='input batch size for training')
-    parser.add_argument('--image_size', type=int, default=None, help='input image size for training')
-    parser.add_argument('--ref_batch_size', type=int, default=None,
+    parser.add_argument('--test_batch_size', type=int, default=None,
                         metavar='N', help='input batch size for retrieval (default: auto)')
+    parser.add_argument('--image_size', type=int, default=None, help='input image size for training')
     parser.add_argument('--class_num', type=int, default=None,
                         help='Set class number. If None, class_num will be set according to dataset`s class number.')
     parser.add_argument('--use_pretrained', type=bool, default=False) # ImageNet-1000 pre-trained model 사용여부(=finetuning 할지, 말지 여부)
@@ -381,11 +384,11 @@ def main(writer):
         image_sizes = {'KPopGirls': 224, 'KPopBoys': 224}
         args.image_size = image_sizes[args.dataset]
     if args.batch_size is None:
-        batch_nums = {'KPopGirls': 64, 'KPopBoys': 64}
+        batch_nums = {'KPopGirls': 32, 'KPopBoys': 32}
         args.batch_size = batch_nums[args.dataset]
-    if args.ref_batch_size is None: # Retrieval 단계에서 'ref_batch_nums'장 단위로 query image와 유사도를 비교합니다.
-        ref_batch_nums = {'KPopGirls': 50, 'KPopBoys': 50}
-        args.ref_batch_size = ref_batch_nums[args.dataset]
+    if args.test_batch_size is None: # Retrieval 단계에서 'ref_batch_nums'장 단위로 query image와 유사도를 비교합니다.
+        test_batch_nums = {'KPopGirls': 32, 'KPopBoys': 32}
+        args.test_batch_size = test_batch_nums[args.dataset]
     if args.model_savepath or args.checkname is None:
         now = datetime.now()
         checkpoint_name = str(args.dataset) + '-' + str(args.backbone) +'_' + str(('%s-%s-%s' % (now.year, now.month, now.day)))

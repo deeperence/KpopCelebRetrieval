@@ -48,18 +48,22 @@ def pick_best_loss(result1, result2):
     else:
         return result2
 
+def listDiff(li1, li2):
+    return (list(set(li1) - set(li2)))
+
 def remove_legacyModels(path):
     entire_file_list = os.listdir(path)
+    best_score = 0
+    best_model = None
+
     for filename in entire_file_list:
-        # best score 갱신
-        if model in filename and float(filename.split('-')[-2]) > float(fold_best_model_score):
-            fold_best_model_score = filename.split('-')[-2]
-            fold_best_model_name = filename
-    best_models.append(fold_best_model_name)
-    print(fold + ' best model:', fold_best_model_name + ' / cv score:', fold_best_model_score)
+        if float(filename.split('-')[5]) > float(best_score):
+            best_score = float(filename.split('-')[5])
+            best_model = "".join(list(filename))
+    print('Current best model:', str(best_model) + ' / score:', str(best_score))
 
     # best score model 제외한 나머지 모델 삭제
-    del_model_list = list(set(entire_file_list) - set(best_models))
-    print('Current best models: ', [filename for filename in best_models if filename.endswith(filename.split('.')[-1])])
-    for file in del_model_list:
-        os.remove(os.path.join(path, file))
+    del_model_list = listDiff(entire_file_list, [best_model])
+
+    for model in del_model_list:
+        os.remove(os.path.join(path, model))

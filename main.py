@@ -18,6 +18,7 @@ import pandas as pd
 from torch import optim
 from tqdm import tqdm
 from utils import util
+from utils.util import remove_legacyModels
 from sklearn.metrics import f1_score
 from dataloader import TestDataset, TrainDataset, custom_transforms
 from backbone_networks import initialize_model
@@ -289,7 +290,7 @@ class Trainer(object):
                         'lr': util.get_lr(optimizer),},
                         args.checkname + 'epoch' + str(epoch) + '-' + str(round(val_score,4))+'-'+ weight_file_name)
                     print('\n')
-                    print('Saved model name: ', args.checkname + '-epoch' + str(epoch) + '-' + str(round(val_score,4))+'-'+ str(('%s-%s-%s' % (now.hour, now.minute, now.second)) + weight_file_name))
+                    remove_legacyModels(args.model_savepath)
             else:
                 if val_loss < best_loss:
                     best_loss = val_loss
@@ -301,6 +302,7 @@ class Trainer(object):
                         'optimizer_state_dict': optimizer.state_dict(),
                         'lr': util.get_lr(optimizer), },
                         args.checkname + '-epoch' + str(epoch) + '-' + str(round(val_score,4)) + '-'+ str(('%s-%s-%s' % (now.hour, now.minute, now.second)) + weight_file_name))
+                    remove_legacyModels(args.model_savepath)
             elapsed = time.time() - start_time
             epoch_lr = util.get_lr(optimizer)
             print('\n')

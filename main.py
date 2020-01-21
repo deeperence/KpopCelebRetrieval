@@ -230,7 +230,7 @@ class Trainer(object):
             optimizer.zero_grad()
             train_loss += loss.item() / len(train_loader)
             epoch_lr = util.get_lr(optimizer)
-            self.writer.add_scalar('train/batch_loss', loss, step)
+            self.writer.add_scalar('train_info/batch_loss', loss, step)
             self.writer.add_scalar('learning_rate/batch', epoch_lr, step)
 
         return train_loss
@@ -250,6 +250,7 @@ class Trainer(object):
                 valid_preds[i * self.args.batch_size: (i+1) * self.args.batch_size] = outputs.cpu().numpy()
                 val_loss += loss.item() / len(valid_loader)
             y_pred = np.argmax(valid_preds, axis=1)
+            self.writer.add_histogram('hist/epoch_y_pred', y_pred, epoch)
             val_score = f1_score(y_true, y_pred, average='micro')
 
         return val_loss, val_score
@@ -271,9 +272,9 @@ class Trainer(object):
             train_loss = self.train_one_epoch(model, criterion, train_loader, optimizer)
             val_loss, val_score = self.validation(model=model, criterion=criterion, validation_dataset=validation_dataset, valid_loader=validation_loader, df_valid=df_validation, epoch=epoch)
             score.append(val_score)
-            self.writer.add_scalar('train/epoch_loss', train_loss, epoch)
-            self.writer.add_scalar('val/epoch_loss', val_loss, epoch)
-            self.writer.add_scalar('val/epoch_F1score', val_score, epoch)
+            self.writer.add_scalar('train_info/epoch_loss', train_loss, epoch)
+            self.writer.add_scalar('val_info/epoch_loss', val_loss, epoch)
+            self.writer.add_scalar('val_info/epoch_F1score', val_score, epoch)
 
             # model save (score or loss?)
             if args.checkpoint_type:
@@ -317,19 +318,19 @@ class Trainer(object):
 def main(writer):
     # Set base parameters (dataset path, backbone name etc...)
     parser = argparse.ArgumentParser(description="This code is for testing various models.")
-    parser.add_argument('--backbone', type=str, default='efficientnet-b2',
+    parser.add_argument('--backbone', type=str, default='efficientnet-b3',
                         choices=['efficientnet-b0','efficientnet-b1', 'efficientnet-b2', 'efficientnet-b3', 'efficientnet-b4'],
-                        help='Set backbone name. be careful input_channels when using oct_resnet.')
+                        help='Set backbone name.')
     parser.add_argument('--dataset', type=str, default='KPopGirls', choices=['KPopGirls', 'KPopBoys'],
                         help='Set dataset type.')
     parser.add_argument('--dataset_path', type=str, default='./../KPopGirls', help='Set base dataset path.')
     parser.add_argument('--workers', type=int, default=4, metavar='N', help='Set CPU threads for pytorch dataloader')
-    parser.add_argument('--checkpoint_type', type=bool, default='True', help='whether store best checkpoint from validation')
+    parser.add_argument('--checkpoint_type', type=bool, default='True', help='whether store best checkpoint via validation routine.')
     parser.add_argument('--checkname', type=str, default=None,
-                        help='Set the checkpoint name. if None, checkname will be set to current dataset+backbone+time.')
+                        help='Set the checkpoint name. if None, checkname will be set to current `dataset+backbone+time`.')
     parser.add_argument('--model_savepath', type=str, default=None, help='set directory for saving trained model.')
     parser.add_argument('--mode', type=str, default='train', choices=['train', 'test'],
-                        help='전체 루틴을 설정합니다. `train`에는 train과 validation이 포함되어 있으므로, F1 score 계산 시엔 test로 변경해야 합니다.')
+                        help='전체 루틴을 설정합니다. `train`에는 train과 validation이 포함되어 있으므로, 유사도 비교 시엔 test 모드로 변경해야 합니다.')
 
     # Set hyper params for training network.
     parser.add_argument('--loss_type', type=str, default='ce', choices=['ce', 'focal'],
@@ -339,12 +340,12 @@ def main(writer):
     parser.add_argument('--batch_size', type=int, default=None,
                         metavar='N', help='input batch size for training')
     parser.add_argument('--test_batch_size', type=int, default=None,
-                        metavar='N', help='input batch size for retrieval (default: auto)')
+                        metavar='N', help='input batch size for retrieval.')
     parser.add_argument('--image_size', type=int, default=None, help='input image size for training')
     parser.add_argument('--class_num', type=int, default=None,
                         help='Set class number. If None, class_num will be set according to dataset`s class number.')
-    parser.add_argument('--use_pretrained', type=bool, default=False) # ImageNet-1000 pre-trained model 사용여부(=finetuning 할지, 말지 여부)
-    parser.add_argument('--feature_extract', type=bool, default=True) # 추가로 쌓은 레이어만 학습('True')할지, pretrained weight 전체를 재학습('False')할지 결정
+    parser.add_argument('--use_pretrained', type=bool, default=False, help='ImageNet-1000 pre-trained model 사용여부를 결정합니다. (=finetuning 할지, 말지 여부)')
+    parser.add_argument('--feature_extract', type=bool, default=True, help='추가로 쌓은 레이어만 학습(`True`)할지, pretrained weight 전체를 재학습(`False`)할지 결정합니다.')
 
     # Set optimizer params for training network.
     parser.add_argument('--lr', type=float, default=None,
@@ -386,7 +387,7 @@ def main(writer):
     if args.batch_size is None:
         batch_nums = {'KPopGirls': 32, 'KPopBoys': 32}
         args.batch_size = batch_nums[args.dataset]
-    if args.test_batch_size is None: # Retrieval 단계에서 'ref_batch_nums'장 단위로 query image와 유사도를 비교합니다.
+    if args.test_batch_size is None: # Retrieval 단계에서 'ref_batch_nums' 단위로 query image와 유사도를 비교합니다.
         test_batch_nums = {'KPopGirls': 32, 'KPopBoys': 32}
         args.test_batch_size = test_batch_nums[args.dataset]
     if args.model_savepath or args.checkname is None:
@@ -399,7 +400,7 @@ def main(writer):
         args.use_cuda = use_cuda
     print(args)
 
-    # 학습된 모델이 저장될 디렉토리 존재여부 확인
+    # 학습된 모델이 저장될 디렉토리 존재여부를 확인합니다.
     if not (os.path.isdir(args.model_savepath)):
         os.makedirs(args.model_savepath)
         print("New directory '" + str(args.model_savepath) + "' has been created for saving trained models.")

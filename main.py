@@ -1,4 +1,4 @@
-import argparse, os, torch, warnings, time, gc
+import argparse, os, torch, warnings, time, gc, glob, itertools
 import numpy as np
 from datetime import datetime
 from torch import cuda
@@ -72,72 +72,101 @@ class Trainer(object):
 
         elif args.mode == 'test': # Test 모드로 설정 후 모델 infer 수행 및 score 계산
             '''
-            trian 후, 모델은 Query image를 인풋으로 받고 각 reference images와 유사도를 비교한 후 query image와 유사한 순서대로 reference image filename을 정렬해 보여줍니다. 
+            train 후, 모델은 Query image를 인풋으로 받고 각 reference images와 유사도를 비교한 후 query image와 유사한 순서대로 reference image filename을 정렬해 보여줍니다. 
             - Reference image는 query 이미지와 유사도 비교의 대상이 되는 이미지입니다.
             - Query image는 모델에 넣어 이미지 검색을 수행할 이미지입니다. 
             '''
 
             print('Inferring Start...')
-            query_path = os.path.join(args.dataset_path, '/QueryImages')
-            reference_path = os.path.join(args.dataset_path, '/Images')
-            model_path = args.model_savepath
-            weight_file = [file for file in os.listdir(model_path) if file.endswith(".pth")] # 'model_savepath' 디렉토리 안의 .pth파일 조회
-            db = [os.path.join(reference_path, path) for path in os.listdir(reference_path)] # 'reference_path' 디렉토리 안의 reference image 파일 이름을 db 리스트에 append합니다.
+            query_path = args.dataset_path + '/QueryImages'
+            reference_path = args.dataset_path + '/Images/'
+            model_path = args.test_model_savepath
+            all_dir = glob.glob(model_path+'*', recursive=True)
 
+            weight_list = []
+            for _dir in all_dir:
+                weight_list.append(os.path.join(_dir, os.listdir(_dir)[0]))
+
+            db = [os.path.join(reference_path, path) for path in os.listdir(reference_path)] # 'reference_path' 디렉토리 안의 reference image 파일 이름을 db 리스트에 append합니다.
             queries = [v.split('/')[-1].split('.')[0] for v in os.listdir(query_path)] # 'query_path'의 각 파일들로부터 파일 이름만 남깁니다. (e.g. 'yooa1', 'yeji3', ...)
             db = [v.split('/')[-1].split('.')[0] for v in db] # 'reference_path'의 각 파일들로부터 파일 이름만 남깁니다.
             queries.sort()
             db.sort()
 
-            transform = custom_transforms(model_name = args.backbone, target_size=args.image_sizes)
+            transform = custom_transforms(model_name = args.backbone, target_size=args.image_size)
             ref_dataset = TestDataset(reference_path, self.df_reference, transforms=transform['test'])
-            ref_loader = DataLoader(ref_dataset, batch_size=args.test_batch_nums, shuffle=False)
+            ref_loader = DataLoader(ref_dataset, batch_size=args.test_batch_size, shuffle=False, num_workers=4, pin_memory=True)
             query_dataset = TestDataset(query_path, self.df_query, transforms=transform['test'])
-            query_loader = DataLoader(query_dataset, batch_size=args.test_batch_nums, shuffle=False)
+            query_loader = DataLoader(query_dataset, batch_size=args.test_batch_size, shuffle=False, num_workers=4, pin_memory=True)
 
             model = initialize_model(args=None, model_name=args.backbone, num_classes=args.class_num)
-            model.load_state_dict(torch.load(weight_file), strict=False)
-            print('model loaded:', weight_file)
+            model.load_state_dict(torch.load(weight_list[0]), strict=False)
+            print('model loaded:', weight_list[0])
             model.eval()
             model.to(device)
 
-            query_vecs = []
-            reference_vecs=[]
+            # Reference와 Query image에 대한 feature vector를 학습이 다 된 모델로부터 추출합니다.
+            reference_paths, reference_vecs = self.batch_process(model, ref_loader)
+            query_paths, query_vecs = self.batch_process(model, query_loader)
+            assert query_paths == queries and reference_paths == db, "order of paths should be same"
 
-            # Query image에 대한 feature vector를 학습이 다 된 모델로부터 추출합니다.
-            for query_i, query_images in enumerate(query_loader):
-                query_images = query_images.cuda()
-                query_vecs.append(np.asarray(model(query_images).detach()))
+            # 두 벡터(query_vecs, reference_vecs)의 유사도를 계산합니다.
+            sim_matrix = self.calculate_sim_matrix(query_vecs, reference_vecs)
 
-            # Reference image에 대한 feature vector를 학습이 다 된 모델로부터 추출합니다.
-            for ref_i, ref_images in enumerate(ref_loader):
-                ref_images = ref_images.cuda()
-                reference_vecs.append(np.asarray(model(ref_images).detach()))
-
-            # l2 normalization
-            query_vecs = util.l2_normalize(query_vecs)
-            reference_vecs = util.l2_normalize(reference_vecs)
-
-            # Calculate cosine similarity and sort
-            sim_matrix = np.dot(query_vecs, reference_vecs.T)
             indices = np.argsort(sim_matrix, axis=1)
             indices = np.flip(indices, axis=1)
 
             retrieval_results = {}
-
-            for (i, query) in enumerate(query_dataset):
+            # Evaluation: mean average precision (mAP)
+            # You can change this part to fit your evaluation skim
+            for (i, query) in enumerate(query_paths):
                 query = query.split('/')[-1].split('.')[0]
-                ranked_list = [ref_dataset[k].split('/')[-1].split('.')[0] for k in indices[i]]
+                ranked_list = [reference_paths[k].split('/')[-1].split('.')[0] for k in indices[i]]
                 ranked_list = ranked_list[:1000]
+
                 retrieval_results[query] = ranked_list
 
-            result_dict = list(zip(range(len(retrieval_results)), retrieval_results.items()))
-
             print('Retrieval done.')
-            print(result_dict)
+            print(retrieval_results)
         else:
             print("wrong mode input.")
             raise NotImplementedError
+
+    def get_feature(self, model, x):
+        feature = model(x)
+        return feature
+
+    def postprocess(self, query_vecs, reference_vecs):
+        """
+        Postprocessing:
+        1) Moving the origin of the feature space to the center of the feature vectors
+        2) L2-normalization
+        """
+        # centerize
+        query_vecs, reference_vecs = util.centerize(query_vecs, reference_vecs)
+
+        # l2 normalization
+        query_vecs = util.l2_normalize(query_vecs)
+        reference_vecs = util.l2_normalize(reference_vecs)
+
+        return query_vecs, reference_vecs
+
+    def batch_process(self, model, loader):
+        feature_vecs = []
+        img_paths = []
+        for data in loader:
+            paths, inputs = data
+            feature_vec = self.get_feature(model, inputs.to(self.device))
+            feature_vec = feature_vec.detach().cpu().numpy()  # (batch_size, channels)
+            for i in range(feature_vec.shape[0]):
+                feature_vecs.append(feature_vec[i])
+            img_paths = img_paths + paths
+
+        return img_paths, np.asarray(feature_vecs)
+
+    def calculate_sim_matrix(self, query_vecs, reference_vecs):
+        query_vecs, reference_vecs = self.postprocess(query_vecs, reference_vecs)
+        return np.dot(query_vecs, reference_vecs.T)
 
     def define_network(self, args, length_train_dataloader):
         '''
@@ -320,7 +349,7 @@ class Trainer(object):
 def main(writer):
     # Set base parameters (dataset path, backbone name etc...)
     parser = argparse.ArgumentParser(description="This code is for testing various models.")
-    parser.add_argument('--backbone', type=str, default='efficientnet-b3',
+    parser.add_argument('--backbone', type=str, default='efficientnet-b0',
                         choices=['efficientnet-b0','efficientnet-b1', 'efficientnet-b2', 'efficientnet-b3', 'efficientnet-b4'],
                         help='Set backbone name.')
     parser.add_argument('--dataset', type=str, default='KPopGirls', choices=['KPopGirls', 'KPopBoys'],
@@ -331,7 +360,8 @@ def main(writer):
     parser.add_argument('--checkname', type=str, default=None,
                         help='Set the checkpoint name. if None, checkname will be set to current `dataset+backbone+time`.')
     parser.add_argument('--model_savepath', type=str, default=None, help='set directory for saving trained model.')
-    parser.add_argument('--mode', type=str, default='train', choices=['train', 'test'],
+    parser.add_argument('--test_model_savepath', type=str, default=None, help='테스트 루틴에서 참조할 saved model directory입니다. .')
+    parser.add_argument('--mode', type=str, default='test', choices=['train', 'test'],
                         help='전체 루틴을 설정합니다. `train`에는 train과 validation이 포함되어 있으므로, 유사도 비교 시엔 test 모드로 변경해야 합니다.')
 
     # Set hyper params for training network.
@@ -387,7 +417,7 @@ def main(writer):
         image_sizes = {'KPopGirls': 224, 'KPopBoys': 224}
         args.image_size = image_sizes[args.dataset]
     if args.batch_size is None:
-        batch_nums = {'KPopGirls': 32, 'KPopBoys': 32}
+        batch_nums = {'KPopGirls': 210, 'KPopBoys': 32}
         args.batch_size = batch_nums[args.dataset]
     if args.test_batch_size is None: # Retrieval 단계에서 'ref_batch_nums' 단위로 query image와 유사도를 비교합니다.
         test_batch_nums = {'KPopGirls': 32, 'KPopBoys': 32}
@@ -397,15 +427,19 @@ def main(writer):
         checkpoint_name = str(args.dataset) + '-' + str(args.backbone) +'_' + str(('%s-%s-%s' % (now.year, now.month, now.day)))
         args.model_savepath = './trained_models/' + checkpoint_name
         args.checkname = args.model_savepath + '/' + checkpoint_name
+    if args.test_model_savepath is None:
+        test_model_savepath = './trained_models/'
+        args.test_model_savepath = test_model_savepath
     if args.use_cuda is None:
         use_cuda = cuda.is_available()
         args.use_cuda = use_cuda
     print(args)
 
     # 학습된 모델이 저장될 디렉토리 존재여부를 확인합니다.
-    if not (os.path.isdir(args.model_savepath)):
-        os.makedirs(args.model_savepath)
-        print("New directory '" + str(args.model_savepath) + "' has been created for saving trained models.")
+    if args.mode == 'train':
+        if not (os.path.isdir(args.model_savepath)):
+            os.makedirs(args.model_savepath)
+            print("New directory '" + str(args.model_savepath) + "' has been created for saving trained models.")
 
     # Define trainer. (trainer includes dataloader, model, optimizer etc...)
     Trainer(args, writer)
@@ -414,7 +448,7 @@ if __name__ == "__main__":
     warnings.filterwarnings('ignore')
     writer = SummaryWriter()
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 0=2080ti, 1=RTX TITAN in Deeperence server
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 0=2080ti, 1=RTX TITAN in Deeperence server
 
     SEED = 2020
     util.fix_seed_everything(SEED) # 하이퍼파라미터 테스트를 위해 모든 시드 고정

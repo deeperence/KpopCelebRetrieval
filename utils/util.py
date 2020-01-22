@@ -13,8 +13,8 @@ def MinMaxScaler (x):
     return (x - _min) / _denom
 
 def l2_normalize(v):
-    norm = np.linalg.norm(v)
-    if norm == 0:
+    norm = np.expand_dims(np.linalg.norm(v, axis=1), axis=1)
+    if np.any(norm == 0):
         return v
     return v / norm
 
@@ -67,3 +67,9 @@ def remove_legacyModels(path):
 
     for model in del_model_list:
         os.remove(os.path.join(path, model))
+
+def centerize(v1, v2):
+    concat = np.concatenate([v1, v2], axis=0)
+    center = np.mean(concat, axis=0)
+    return v1-center, v2-center
+

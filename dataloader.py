@@ -61,11 +61,12 @@ class TestDataset():
         self.transforms = transforms
 
     def __len__(self):
-        return len(self.df)
+        len(self.test_data_path)
 
     def __getitem__(self, idx):
         image = Image.open(os.path.join(self.test_data_path, self.df['filename'][idx])).convert("RGB")
+        image_path = os.path.join(self.test_data_path, self.df['filename'][idx])
         if self.transforms:
             image = self.transforms(image)
 
-        return image
+        return image_path, image

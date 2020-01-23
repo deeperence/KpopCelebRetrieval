@@ -31,6 +31,7 @@ indices = np.flip(indices, axis=1)
 - pillow 6.2.1
 
 ## Usage
+학습 수행 시는 `args.mode`를 `train`으로, 테스트 수행 시엔 `args.mode`를 `test`로 설정하고 실행해 주세요.<br><br>
 run `main.py` with following arguments:
 > (Linux) $python3 main.py <br>
 > (Windows) $python main.py

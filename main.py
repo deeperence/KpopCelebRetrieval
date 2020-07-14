@@ -23,6 +23,7 @@ from sklearn.metrics import f1_score
 from dataloader import TestDataset, TrainDataset, custom_transforms
 from backbone_networks import initialize_model
 
+
 class Trainer(object):
     def __init__(self, args, writer):
         self.args = args
@@ -86,6 +87,8 @@ class Trainer(object):
             weight_list = []
             for _dir in all_dir:
                 weight_list.append(os.path.join(_dir, os.listdir(_dir)[0]))
+                print(_dir)
+
 
             db = [os.path.join(reference_path, path) for path in os.listdir(reference_path)] # 'reference_path' 디렉토리 안의 reference image 파일 이름을 db 리스트에 append합니다.
             queries = [v.split('/')[-1].split('.')[0] for v in os.listdir(query_path)] # 'query_path'의 각 파일들로부터 파일 이름만 남깁니다. (e.g. 'yooa1', 'yeji3', ...)
@@ -346,6 +349,7 @@ class Trainer(object):
 
         return train_result, lrs, score
 
+
 def main(writer):
     # Set base parameters (dataset path, backbone name etc...)
     parser = argparse.ArgumentParser(description="This code is for testing various models.")
@@ -354,7 +358,7 @@ def main(writer):
                         help='Set backbone name.')
     parser.add_argument('--dataset', type=str, default='KPopGirls', choices=['KPopGirls', 'KPopBoys'],
                         help='Set dataset type.')
-    parser.add_argument('--dataset_path', type=str, default='./../KPopGirls', help='Set base dataset path.')
+    parser.add_argument('--dataset_path', type=str, default='A:/Users/SSY/Desktop/KPopGirls', help='Set base dataset path.')
     parser.add_argument('--workers', type=int, default=4, metavar='N', help='Set CPU threads for pytorch dataloader')
     parser.add_argument('--checkpoint_type', type=bool, default='True', help='whether store best checkpoint via validation routine.')
     parser.add_argument('--checkname', type=str, default=None,
@@ -433,7 +437,6 @@ def main(writer):
     if args.use_cuda is None:
         use_cuda = cuda.is_available()
         args.use_cuda = use_cuda
-    print(args)
 
     # 학습된 모델이 저장될 디렉토리 존재여부를 확인합니다.
     if args.mode == 'train':
@@ -444,11 +447,12 @@ def main(writer):
     # Define trainer. (trainer includes dataloader, model, optimizer etc...)
     Trainer(args, writer)
 
+
 if __name__ == "__main__":
     warnings.filterwarnings('ignore')
     writer = SummaryWriter()
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 0=2080ti, 1=RTX TITAN in Deeperence server
+    # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 0=2080ti, 1=RTX TITAN in Deeperence server
 
     SEED = 2020
     util.fix_seed_everything(SEED) # 하이퍼파라미터 테스트를 위해 모든 시드 고정

@@ -39,7 +39,7 @@ class Trainer(object):
             print('Total epoches:', args.epochs)
             stratified_folds = StratifiedShuffleSplit(n_splits=1, test_size=0.1)
 
-            for (train_index, validation_index) in stratified_folds.split(self.df_train['class'], self.df_train['class']):
+            for (train_index, validation_index) in stratified_folds.split(self.df_train, self.df_train['class']):
                 df_train = self.df_train.iloc[train_index, :].reset_index()
                 df_validation = self.df_train.iloc[validation_index, :].reset_index()
 
@@ -272,7 +272,7 @@ class Trainer(object):
         model.eval()
         y_true = df_valid['class'].values
         self.writer.add_histogram('hist/epoch_y_true', y_true, epoch)
-        valid_preds = np.zeros((len(validation_dataset), self.args.class_num))
+        valid_preds = np.zeros((len(validation_dataset), self.args.class_num)) # (validation_dataset, class_num)
         val_loss = 0.
 
         with torch.no_grad():
@@ -284,7 +284,7 @@ class Trainer(object):
                 val_loss += loss.item() / len(valid_loader)
             y_pred = np.argmax(valid_preds, axis=1)
             self.writer.add_histogram('hist/epoch_y_pred', y_pred, epoch)
-            val_score = f1_score(y_true, y_pred, average='micro')
+            val_score = f1_score(y_true, y_pred, average='micro') # macro
 
         return val_loss, val_score
 

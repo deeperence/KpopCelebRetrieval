@@ -35,3 +35,6 @@ indices = np.flip(indices, axis=1)
 run `main.py` with following arguments:
 > (Linux) $python3 main.py <br>
 > (Windows) $python main.py
+
+## Todo list
+- [ ] https://github.com/facebookresearch/faiss 를 사용하도록 수정 
